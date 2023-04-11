@@ -40,6 +40,7 @@ async fn main() {
     }
 
     let mut bot= bot_config::new();
+
     let mut qa:QA=QA::default();
 
 
@@ -55,20 +56,29 @@ async fn main() {
 
         });
 
-        let mut cmd=std::process::Command::new(view_editor)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::inherit())
-            .spawn()
-            .unwrap();
-        let mut stdin=cmd.stdin.take().unwrap();
+        if !bot.bot_config.view_editor.is_empty() {
+            let mut cmd=std::process::Command::new(view_editor)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::inherit())
+                .spawn()
+                .unwrap();
+            let mut stdin=cmd.stdin.take().unwrap();
 
-        while let Some(recv) = receiver.recv().await{
+            while let Some(recv) = receiver.recv().await{
 
-            qa.anwser.push_str(recv.clone().as_str());
-            stdin.write(recv.to_string().as_bytes()).unwrap();
+                qa.anwser.push_str(recv.clone().as_str());
+                stdin.write(recv.to_string().as_bytes()).unwrap();
 
-            stdin.flush().unwrap();
+                stdin.flush().unwrap();
+            }
+        }else {
+            while let Some(recv) = receiver.recv().await{
+                qa.anwser.push_str(recv.clone().as_str());
+                print!("{}",recv);
+                std::io::stdout().flush().unwrap();
+            }
         }
+
 
 
     }else {
