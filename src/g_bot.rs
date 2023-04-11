@@ -304,13 +304,13 @@ pub mod history{
         }
         #[cfg(linux)]
         pub fn get_ppid()->String{
-            nix::unistd::getppid().to_string()
+            return nix::unistd::getppid().to_string();
         }
 
         pub fn new()->History{
             //读取文件
             let mut config=dirs::config_dir().unwrap();
-            config.push("gpt_bot");
+            config.push("chat-gpt-line");
             config.push("history");
             if !config.exists() {
                 std::fs::create_dir_all(&config).unwrap();
