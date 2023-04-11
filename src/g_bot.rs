@@ -302,7 +302,7 @@ pub mod history{
         pub fn get_ppid()->String{
             return format!("{}",0);
         }
-        #[cfg(linux)]
+        #[cfg(unix)]
         pub fn get_ppid()->String{
             return nix::unistd::getppid().to_string();
         }
@@ -315,7 +315,7 @@ pub mod history{
             if !config.exists() {
                 std::fs::create_dir_all(&config).unwrap();
             }
-            let ppid=Self::get_ppid();
+            let ppid=History::get_ppid();
 
             config.push(ppid.clone()+".json");
 
