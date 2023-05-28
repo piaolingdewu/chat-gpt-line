@@ -165,8 +165,7 @@ mod gpt_request{
             let is_stream=self.stream.clone();
 
 
-            //构造一个请求
-            let mut client=reqwest::ClientBuilder::new()
+            match reqwest::ClientBuilder::new()
                 .proxy(reqwest::Proxy::http(http_proxy.clone()).unwrap())
                 .proxy(reqwest::Proxy::https(https_proxy.clone()).unwrap())
                 .build()
@@ -175,7 +174,10 @@ mod gpt_request{
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", token.clone()))
                 .body(serde_json::to_string(&body).unwrap())
-                .send().await.unwrap();
+                .send().await{
+                        Ok(mut client) => {
+                            // 请求成
+                            
             //println!("{}",serde_json::to_string(&body).unwrap());
 
             if is_stream {
@@ -211,7 +213,17 @@ mod gpt_request{
                     sender.send(rec.choices[0].message.content.clone()).await.unwrap();
                 }
             }
-        }
+ 
+                        },
+                        Err(err) => {
+                            // 请求失败
+                            panic!("{}",format!("{}",err));                            
+                        },
+                    }
+
+                
+
+       }
     }
 }
 
