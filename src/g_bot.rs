@@ -210,12 +210,22 @@ mod gpt_request {
                     if is_stream {
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
-                            let mut str = String::from_utf8(Recv.to_vec()).unwrap();
+                             
+                            let mut str = match String::from_utf8(Recv.to_vec()) {
+                                Ok(data) => {data},
+                                Err(err) => {
+                                    // 解析失败 并且返回错误内容
+                                    panic!("{}",err);
+                                },
+                            };
+
                             for line in str.lines() {
                                 //格式化文本
-                                if line.len() > 5 {
-                                    let json_data = line.split_at(5).1;
-                                    match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_data) {
+                                if let Some(json_data) = line.split_once("data:") {
+                                    // 这里进行splite会失败？ 因为整好卡在了两个字符的中间
+                                    //let json_data = line.split_at(5).1;
+                                    
+                                    match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_data.1) {
                                         Ok(data) => {
                                             let out_string = data.choices[0].delta.content.clone();
                                             sender.send(out_string).await.unwrap();
