@@ -57,13 +57,14 @@ pub mod g_bot {
             print!("{}", chunk);
         }
     }
+
     #[tokio::test]
-    async fn row_request(){
+    async fn row_request() {
         // 新建一个post请求
         let mut request = Client::new()
             .post("https://accesschatgpt.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2023-03-15-preview")
             .header("Content-Type", "application/json")
-            .header("api-key","<KEY>")
+            .header("api-key", "<KEY>")
             .body(r#"{
                       "messages": [
                           {"role":"system","content":"You are an AI assistant that helps people find information."},
@@ -82,15 +83,14 @@ pub mod g_bot {
         // 发送请求
         let res = Client::new().execute(request).await.unwrap();
 
-        println!("{:?}",res.text().await.unwrap());
-
+        println!("{:?}", res.text().await.unwrap());
     }
 }
 
 //gpt的请求
 mod gpt_request {
     use std::fmt::Debug;
-    use reqwest::RequestBuilder;
+    use reqwest::{Client, RequestBuilder};
     use serde::Serialize;
     use telegram_bot::Message;
     use crate::g_bot::history::QA;
@@ -159,15 +159,13 @@ mod gpt_request {
         }
 
         //构造消息
-        fn construct_messages(&mut self){
+        fn construct_messages(&mut self) {
             todo!()
-
         }
 
         // 发送azure的请求
-        pub async fn send_azure(&mut self, sender: tokio::sync::mpsc::Sender<String>){
+        pub async fn send_azure(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
             todo!()
-
         }
         //发送请求
         pub async fn send(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
@@ -193,24 +191,20 @@ mod gpt_request {
 
 
             let http_proxy = self.http_proxy.clone();
-            let https_proxy = self.http_proxy.clone();
             let token = self.token.clone();
             let is_stream = self.stream.clone();
 
+            let mut request=if http_proxy.is_empty() { Client::new() }else {
+                Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
+            };
 
-            match reqwest::ClientBuilder::new()
-                .proxy(reqwest::Proxy::http(http_proxy.clone()).unwrap())
-                .proxy(reqwest::Proxy::https(https_proxy.clone()).unwrap())
-                .build()
-                .unwrap()
-                .post("https://accesschatgpt.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2023-03-15-preview")
-                .header("Content-Type", "application/json")
-                .header("api-key", format!("{}", token.clone()))
-                .body(serde_json::to_string(&body).unwrap())
-                .send().await {
+            match request.post("https://accesschatgpt.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2023-03-15-preview")
+                         .header("Content-Type", "application/json")
+                         .header("api-key", format!("{}", token.clone()))
+                         .body(serde_json::to_string(&body).unwrap())
+                         .send().await {
                 Ok(mut client) => {
                     // 请求成
-
                     //println!("{}",serde_json::to_string(&body).unwrap());
 
                     if is_stream {
@@ -397,7 +391,6 @@ pub mod history {
         qa.qa.push(q2);
         let json = serde_json::to_string(&qa).unwrap().to_string();
         println!("{}", json);
-
     }
 }
 
