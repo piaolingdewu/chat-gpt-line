@@ -90,6 +90,7 @@ pub mod g_bot {
 //gpt的请求
 mod gpt_request {
     use std::fmt::Debug;
+    use std::io::BufRead;
     use reqwest::{Client, RequestBuilder};
     use serde::Serialize;
     use telegram_bot::Message;
@@ -167,6 +168,8 @@ mod gpt_request {
         pub async fn send_azure(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
             todo!()
         }
+
+
         //发送请求
         pub async fn send(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
             let mut body = super::request_json::request_body::ChatMessage { ..Default::default() };
@@ -210,32 +213,41 @@ mod gpt_request {
                     if is_stream {
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
-                             
-                            let mut str = match String::from_utf8(Recv.to_vec()) {
-                                Ok(data) => {data},
-                                Err(err) => {
-                                    // 解析失败 并且返回错误内容
-                                    panic!("{}",err);
-                                },
-                            };
 
-                            for line in str.lines() {
-                                //格式化文本
-                                if let Some(json_data) = line.split_once("data:") {
-                                    // 这里进行splite会失败？ 因为整好卡在了两个字符的中间
-                                    //let json_data = line.split_at(5).1;
-                                    
-                                    match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_data.1) {
-                                        Ok(data) => {
-                                            let out_string = data.choices[0].delta.content.clone();
-                                            sender.send(out_string).await.unwrap();
-                                        }
+                            let mut stream=std::io::BufReader::new(Recv.as_ref());
+
+                            for line_byte in stream.split(b'\n') {
+                                if let Ok(line_byte) = line_byte {
+
+                                    let str = match String::from_utf8(line_byte.clone()) {
+                                        Ok(data) => {data},
                                         Err(err) => {
-                                            //println!("{}",err);
+                                            // 解析失败 并且返回错误内容
+                                            panic!("{}",err);
+                                        },
+                                    };
+
+                                    if let Some(json_string) = str.split_once("data:") {
+
+
+                                        match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string.1) {
+                                            Ok(data) => {
+                                                let out_string = data.choices[0].delta.content.clone();
+                                                sender.send(out_string).await.unwrap();
+                                            }
+                                            Err(err) => {
+                                                //println!("{}",err);
+                                            }
                                         }
                                     }
+
+
                                 }
+
                             }
+
+
+
                         }
                     } else {
                         while let Some(Recv) = client.chunk().await.unwrap() {
