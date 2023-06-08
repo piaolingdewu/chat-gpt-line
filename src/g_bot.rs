@@ -201,7 +201,7 @@ mod gpt_request {
                 Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
             };
 
-            match request.post("https://accesschatgpt.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2023-03-15-preview")
+            match request.post("https://dallgenserver.openai.azure.com/openai/deployments/ccc/chat/completions?api-version=2023-03-15-preview")
                          .header("Content-Type", "application/json")
                          .header("api-key", format!("{}", token.clone()))
                          .body(serde_json::to_string(&body).unwrap())
@@ -216,14 +216,17 @@ mod gpt_request {
 
                             let mut stream=std::io::BufReader::new(Recv.as_ref());
 
+
                             for line_byte in stream.split(b'\n') {
                                 if let Ok(line_byte) = line_byte {
 
                                     let str = match String::from_utf8(line_byte.clone()) {
                                         Ok(data) => {data},
                                         Err(err) => {
-                                            // 解析失败 并且返回错误内容
-                                            panic!("{}",err);
+                                            // @TODO: 这里解析失败只有一个原因 ，那就是把一个中文字符分成两行了 所以不能转化陈utf8类型
+                                            //panic!("{}",err);
+
+                                            "".to_string()
                                         },
                                     };
 
