@@ -37,6 +37,7 @@ pub mod g_bot {
                 .set_model_name(self.config.module.clone())
                 .enable_stream(self.config.stream.clone())
                 .set_qustion(quest)
+                .set_system_prompt(self.config.system_prompt.clone()) //设置prompt
                 .send(tx).await;
         }
     }
@@ -98,6 +99,7 @@ mod gpt_request {
 
     use crate::g_bot::request_json::*;
     use crate::g_bot::request_json::recv_chunk::ChatCompletionChunk;
+    use crate::g_config;
 
     #[derive(Default)]
     pub struct gpt_request {
@@ -120,7 +122,7 @@ mod gpt_request {
         //设置历史对话内容
         qa: Vec<super::history::QA>,
         //设置系统的人设
-        system_character: String,
+        system_prompt: String,
     }
 
     impl gpt_request {
@@ -158,16 +160,11 @@ mod gpt_request {
             self.question = qustion;
             return self;
         }
-
-        //构造消息
-        fn construct_messages(&mut self) {
-            todo!()
+        pub fn set_system_prompt(&mut self, system_prompt: String) -> &mut gpt_request {
+            self.system_prompt=system_prompt;
+            return self
         }
 
-        // 发送azure的请求
-        pub async fn send_azure(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
-            todo!()
-        }
 
 
         //发送请求
@@ -176,7 +173,19 @@ mod gpt_request {
 
             body.model = self.model.clone();
             body.stream = self.stream.clone();
+            
+            // 读取prompt
+            let system_prompt=if self.system_prompt.is_empty(){
+                "".to_string()
+            }else{self.system_prompt.clone()};
+            
+            // 设置prompt
+            body.messages.push(super::request_json::request_body::Message {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            });
 
+            // 设置基础内容
             for item in self.qa.iter() {
                 body.messages.push(super::request_json::request_body::Message {
                     role: "user".to_string(),
@@ -191,6 +200,8 @@ mod gpt_request {
                 role: "user".to_string(),
                 content: self.question.clone().to_string(),
             });
+            //println!("prompt:{}",serde_json::to_string(&body.messages).unwrap());
+
 
 
             let http_proxy = self.http_proxy.clone();
@@ -269,6 +280,8 @@ mod gpt_request {
                 }
             }
         }
+
+
     }
 }
 

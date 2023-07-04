@@ -34,6 +34,8 @@ pub mod g_config{
         pub module:String,
         // 是否使用流式传递数据，如果启用可能会消耗更多的流量
         pub stream: bool,
+        // prompt
+        pub system_prompt:String,
     }
 
     impl config {
