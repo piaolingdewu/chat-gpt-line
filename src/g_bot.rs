@@ -212,7 +212,7 @@ mod gpt_request {
                 Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
             };
 
-            match request.post("https://dallgenserver.openai.azure.com/openai/deployments/ccc/chat/completions?api-version=2023-03-15-preview")
+            match request.post("https://dallgenserver.openai.azure.com/openai/deployments/master/chat/completions?api-version=2023-03-15-preview")
                          .header("Content-Type", "application/json")
                          .header("api-key", format!("{}", token.clone()))
                          .body(serde_json::to_string(&body).unwrap())
@@ -222,21 +222,51 @@ mod gpt_request {
                     //println!("{}",serde_json::to_string(&body).unwrap());
 
                     if is_stream {
+                        let mut fail_buf=Vec::<u8>::new();
+                        
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
 
                             let mut stream=std::io::BufReader::new(Recv.as_ref());
 
+                            
 
+                            
                             for line_byte in stream.split(b'\n') {
-                                if let Ok(line_byte) = line_byte {
 
-                                    let str = match String::from_utf8(line_byte.clone()) {
-                                        Ok(data) => {data},
+                                if let Ok(line_byte) = line_byte {
+                                    
+                                    let mut cur_byte=line_byte.clone();
+
+                                    if !fail_buf.is_empty() {
+                                        fail_buf.append(&mut line_byte.clone());
+                                        // 尝试移除所有的换行符并且进行解析
+                                        fail_buf.retain(|s|{
+                                            if *s != b'\n'{
+                                                return false;
+                                            }
+                                            true
+                                        });
+                                        cur_byte=fail_buf.clone();
+                                    }
+
+                                    
+
+                                    let str = match String::from_utf8(cur_byte.clone()) {
+                                        Ok(mut data) => {
+                                            if !fail_buf.is_empty(){
+                                                data=format!("({})",data);
+                                                fail_buf.clear();
+                                            }
+                                            data
+                                        },
                                         Err(err) => {
-                                            // @TODO: 这里解析失败只有一个原因 ，那就是把一个中文字符分成两行了 所以不能转化陈utf8类型
+                                            // @TODO: 这里解析失败只有一个原因 ，那就是把一个中文字符分成两行了 所以不能转化成utf8类型
                                             //panic!("{}",err);
 
+                                            // 读取的bytes收入到
+                                            fail_buf.append(&mut line_byte.clone());
+                                            println!("当前字节行解析失败!!!");
                                             "".to_string()
                                         },
                                     };

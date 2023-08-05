@@ -67,7 +67,7 @@ async fn main() {
             while let Some(recv) = receiver.recv().await{
 
                 qa.anwser.push_str(recv.clone().as_str());
-                stdin.write(recv.to_string().as_bytes()).unwrap();
+                stdin.write_all(recv.to_string().as_bytes()).unwrap();
 
                 stdin.flush().unwrap();
             }
