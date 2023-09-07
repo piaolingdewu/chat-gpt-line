@@ -212,7 +212,7 @@ mod gpt_request {
                 Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
             };
 
-            match request.post("https://dallgenserver.openai.azure.com/openai/deployments/master/chat/completions?api-version=2023-03-15-preview")
+            match request.post("https://main-gpt4.openai.azure.com/openai/deployments/gpt35/chat/completions?api-version=2023-07-01-preview")
                          .header("Content-Type", "application/json")
                          .header("api-key", format!("{}", token.clone()))
                          .body(serde_json::to_string(&body).unwrap())
@@ -272,12 +272,13 @@ mod gpt_request {
                                     };
 
                                     if let Some(json_string) = str.split_once("data:") {
-
-
                                         match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string.1) {
                                             Ok(data) => {
-                                                let out_string = data.choices[0].delta.content.clone();
-                                                sender.send(out_string).await.unwrap();
+                                                // @TODO: 格式被修改，所以接下来需要接受的格式
+                                                if data.choices.len()>0{
+                                                    let out_string = data.choices[0].delta.content.clone();
+                                                    sender.send(out_string).await.unwrap();
+                                                }
                                             }
                                             Err(err) => {
                                                 //println!("{}",err);
