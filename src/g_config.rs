@@ -21,17 +21,13 @@ pub mod g_config{
 
     #[derive(Debug, Serialize, Deserialize,Default)]
     pub struct config{
-        //http代理
-        pub http_proxy:String,
-        pub https_proxy:String,
+        pub endpoint:String,
         //token
         pub token:String,
         //检视编辑器
         pub view_editor:String,
         //对话记忆长度
         pub memory:u8,
-        // 使用的模型版本
-        pub module:String,
         // 是否使用流式传递数据，如果启用可能会消耗更多的流量
         pub stream: bool,
         // prompt

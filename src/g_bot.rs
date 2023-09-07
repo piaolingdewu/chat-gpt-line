@@ -30,13 +30,11 @@ pub mod g_bot {
 
             // 这里临时修改一下参数
             super::gpt_request::gpt_request::new()
-                .add_http_proxy(self.config.http_proxy.clone())
-                .add_https_proxy(self.config.https_proxy.clone())
                 .add_token(self.config.token.clone())
                 .add_QA_histore(history)
-                .set_model_name(self.config.module.clone())
                 .enable_stream(self.config.stream.clone())
                 .set_qustion(quest)
+                .set_endpoint(self.config.endpoint.clone())
                 .set_system_prompt(self.config.system_prompt.clone()) //设置prompt
                 .send(tx).await;
         }
@@ -103,6 +101,8 @@ mod gpt_request {
 
     #[derive(Default)]
     pub struct gpt_request {
+        // endpoint
+        endpoint: String,
         //用于提问的token
         token: String,
 
@@ -164,6 +164,10 @@ mod gpt_request {
             self.system_prompt=system_prompt;
             return self
         }
+        pub fn set_endpoint(&mut self,endpoint:String)-> &mut gpt_request{
+            self.endpoint=endpoint;
+            return self;
+        }
 
 
 
@@ -212,7 +216,7 @@ mod gpt_request {
                 Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
             };
 
-            match request.post("https://main-gpt4.openai.azure.com/openai/deployments/gpt35/chat/completions?api-version=2023-07-01-preview")
+            match request.post(self.endpoint.clone())
                          .header("Content-Type", "application/json")
                          .header("api-key", format!("{}", token.clone()))
                          .body(serde_json::to_string(&body).unwrap())
