@@ -169,6 +169,10 @@ mod gpt_request {
             return self;
         }
 
+        pub fn get_stream_data(&self,stream_data:String)->Option<String>{
+            todo!()
+        }
+
 
 
         //发送请求
@@ -227,15 +231,9 @@ mod gpt_request {
 
                     if is_stream {
                         let mut fail_buf=Vec::<u8>::new();
-                        
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
-
                             let mut stream=std::io::BufReader::new(Recv.as_ref());
-
-                            
-
-                            
                             for line_byte in stream.split(b'\n') {
 
                                 if let Ok(line_byte) = line_byte {
@@ -559,3 +557,4 @@ pub mod request_json {
         }
     }
 }
+
