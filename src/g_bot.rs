@@ -88,6 +88,7 @@ pub mod g_bot {
 
 //gpt的请求
 mod gpt_request {
+    use std::cell::RefCell;
     use std::fmt::Debug;
     use std::io::BufRead;
     use reqwest::{Client, RequestBuilder};
@@ -230,65 +231,86 @@ mod gpt_request {
                     //println!("{}",serde_json::to_string(&body).unwrap());
 
                     if is_stream {
-                        let mut fail_buf=Vec::<u8>::new();
+                        let mut fail_buf=RefCell::new(Vec::<u8>::new());
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
                             let mut stream=std::io::BufReader::new(Recv.as_ref());
                             for line_byte in stream.split(b'\n') {
+                                
+                                let exp_string_data=|json_string:String|->Option<String>{
+                                    if let Ok(json_data) = serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string) {
+                                        // 解析成功
+                                        if json_data.choices.len()>0{
+                                            let out_string = json_data.choices[0].delta.content.clone();
+                                            return Some(out_string)
+                                        }
+                                    }
+                                    None
+                                };
+
+                                let try_exp_fail_buf=||->Option<String>{
+                                    let data_bytes=fail_buf.borrow().clone();
+
+                                    let mut json_string=String::from_utf8(data_bytes).unwrap_or_default();
+                                    json_string=json_string.replace("\n", "");
+                                    match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string) {
+                                        Ok(json_data) => {
+                                            // 解析成功
+                                            fail_buf.borrow_mut().clear();
+                                            if json_data.choices.len()>0{
+                                                let out_string = json_data.choices[0].delta.content.clone();
+                                                return Some(out_string)
+                                            }
+
+                                        },
+                                        Err(_) => {
+                                            // 解析失败
+                                        },
+                                    }
+                                    
+                                    None
+                                };
+
 
                                 if let Ok(line_byte) = line_byte {
-                                    
-                                    let mut cur_byte=line_byte.clone();
 
-                                    if !fail_buf.is_empty() {
-                                        fail_buf.append(&mut line_byte.clone());
-                                        // 尝试移除所有的换行符并且进行解析
-                                        fail_buf.retain(|s|{
-                                            if *s != b'\n'{
-                                                return false;
-                                            }
-                                            true
-                                        });
-                                        cur_byte=fail_buf.clone();
-                                    }
+                                    // @TODO:解析出来的内容发送给sender
+                                    // sender.send(out_string).await.unwrap();
+                                    match String::from_utf8(line_byte.clone()) {
+                                        Ok(line_string)=>{
+                                            // 尝试解析成json
+                                            let rp_string=line_string.replace("data:", "");
 
-                                    
+                                            if let Some(revice_content) =  exp_string_data(rp_string){
+                                                    // 解析成功，发送数据
+                                                    if fail_buf.borrow().len()>0{
+                                                        fail_buf.borrow_mut().clear()
+                                                    }
 
-                                    let str = match String::from_utf8(cur_byte.clone()) {
-                                        Ok(mut data) => {
-                                            if !fail_buf.is_empty(){
-                                                data=format!("({})",data);
-                                                fail_buf.clear();
-                                            }
-                                            data
-                                        },
-                                        Err(err) => {
-                                            // @TODO: 这里解析失败只有一个原因 ，那就是把一个中文字符分成两行了 所以不能转化成utf8类型
-                                            //panic!("{}",err);
+                                                    sender.send(revice_content).await.unwrap();
 
-                                            // 读取的bytes收入到
-                                            fail_buf.append(&mut line_byte.clone());
-                                            println!("当前字节行解析失败!!!");
-                                            "".to_string()
-                                        },
-                                    };
+                                            }else{
+                                                let mut li_co=line_byte.clone();
 
-                                    if let Some(json_string) = str.split_once("data:") {
-                                        match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string.1) {
-                                            Ok(data) => {
-                                                // @TODO: 格式被修改，所以接下来需要接受的格式
-                                                if data.choices.len()>0{
-                                                    let out_string = data.choices[0].delta.content.clone();
-                                                    sender.send(out_string).await.unwrap();
+                                                fail_buf.borrow_mut().append(&mut li_co);
+
+                                                if let Some(recv_content) = try_exp_fail_buf() {
+                                                    sender.send(recv_content).await.unwrap();
                                                 }
                                             }
-                                            Err(err) => {
-                                                //println!("{}",err);
+                                            //let json_data=serde_json::from_str(&line_string);
+                                        }
+                                        Err(_)=>{
+                                            // 解析为string失败，这个时候大概率是一个中文两个字节，正好解析到中间了
+                                            let mut li_co=line_byte.clone();
+
+                                            fail_buf.borrow_mut().append(&mut li_co);
+                                            if let Some(recv_content) = try_exp_fail_buf() {
+                                                sender.send(recv_content).await.unwrap();
                                             }
                                         }
                                     }
-
-
+                                    
                                 }
 
                             }
