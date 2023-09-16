@@ -21,7 +21,7 @@ pub mod g_bot {
             }
         }
 
-        pub async fn send_qustion(&mut self, quest: String, tx: tokio::sync::mpsc::Sender<String>) {
+        pub async fn send_qustion(&mut self, quest: String, tx: std::sync::Arc<std::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
             //载入历史记录
             let mut history = vec![];
             if let Some(load) = History::new().read_history_content(self.config.memory) {
@@ -88,11 +88,14 @@ pub mod g_bot {
 
 //gpt的请求
 mod gpt_request {
+    use std::borrow::BorrowMut;
     use std::cell::RefCell;
     use std::fmt::Debug;
     use std::io::BufRead;
     use reqwest::{Client, RequestBuilder};
     use serde::Serialize;
+    use std::sync::Arc;
+    use std::sync::Mutex;
     use telegram_bot::Message;
     use crate::g_bot::history::QA;
 
@@ -177,8 +180,9 @@ mod gpt_request {
 
 
         //发送请求
-        pub async fn send(&mut self, sender: tokio::sync::mpsc::Sender<String>) {
+        pub async fn send(&mut self, mut sender: std::sync::Arc<std::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
             let mut body = super::request_json::request_body::ChatMessage { ..Default::default() };
+            let mut sender_arc=std::sync::Arc::new(std::sync::Mutex::new(&sender));
 
             body.model = self.model.clone();
             body.stream = self.stream.clone();
@@ -231,7 +235,9 @@ mod gpt_request {
                     //println!("{}",serde_json::to_string(&body).unwrap());
 
                     if is_stream {
-                        let mut fail_buf=RefCell::new(Vec::<u8>::new());
+                        
+                        let mut fail_buf=Arc::new(Mutex::new(Vec::<u8>::new()));
+
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
                             let mut stream=std::io::BufReader::new(Recv.as_ref());
@@ -249,14 +255,16 @@ mod gpt_request {
                                 };
 
                                 let try_exp_fail_buf=||->Option<String>{
-                                    let data_bytes=fail_buf.borrow().clone();
+                                    let mut  guard=fail_buf.try_lock().unwrap();
+                                    
+                                    let data_bytes=guard.clone();
 
-                                    let mut json_string=String::from_utf8(data_bytes).unwrap_or_default();
+                                    let mut json_string=String::from_utf8( data_bytes).unwrap_or_default();
                                     json_string=json_string.replace("\n", "");
                                     match serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&json_string) {
                                         Ok(json_data) => {
                                             // 解析成功
-                                            fail_buf.borrow_mut().clear();
+                                            guard.clear();
                                             if json_data.choices.len()>0{
                                                 let out_string = json_data.choices[0].delta.content.clone();
                                                 return Some(out_string)
@@ -276,26 +284,33 @@ mod gpt_request {
 
                                     // @TODO:解析出来的内容发送给sender
                                     // sender.send(out_string).await.unwrap();
+                                    let mut fail_buff_guard=fail_buf.try_lock().unwrap();
                                     match String::from_utf8(line_byte.clone()) {
                                         Ok(line_string)=>{
                                             // 尝试解析成json
                                             let rp_string=line_string.replace("data:", "");
 
                                             if let Some(revice_content) =  exp_string_data(rp_string){
-                                                    // 解析成功，发送数据
-                                                    if fail_buf.borrow().len()>0{
-                                                        fail_buf.borrow_mut().clear()
-                                                    }
 
-                                                    sender.send(revice_content).await.unwrap();
+                                                // 解析成功，发送数据
+
+
+                                                if fail_buff_guard.len()>0{
+                                                    fail_buff_guard.clear()
+                                                }
+                                                let mut guard=sender.borrow_mut().try_lock().unwrap();
+                                                guard.send(revice_content).await.unwrap();
+                                                //sender.send(revice_content).await.unwrap();
 
                                             }else{
                                                 let mut li_co=line_byte.clone();
 
-                                                fail_buf.borrow_mut().append(&mut li_co);
+
+                                                fail_buff_guard.append(&mut li_co);
 
                                                 if let Some(recv_content) = try_exp_fail_buf() {
-                                                    sender.send(recv_content).await.unwrap();
+                                                    let mut guard=sender.borrow_mut().try_lock().unwrap();
+                                                    guard.send(recv_content).await.unwrap();
                                                 }
                                             }
                                             //let json_data=serde_json::from_str(&line_string);
@@ -303,10 +318,11 @@ mod gpt_request {
                                         Err(_)=>{
                                             // 解析为string失败，这个时候大概率是一个中文两个字节，正好解析到中间了
                                             let mut li_co=line_byte.clone();
-
-                                            fail_buf.borrow_mut().append(&mut li_co);
+                                            
+                                            fail_buff_guard.append(&mut li_co);
                                             if let Some(recv_content) = try_exp_fail_buf() {
-                                                sender.send(recv_content).await.unwrap();
+                                                let mut guard=sender.borrow_mut().try_lock().unwrap();
+                                                guard.send(recv_content).await.unwrap();
                                             }
                                         }
                                     }
@@ -325,7 +341,9 @@ mod gpt_request {
 
                             let rec: super::request_json::recv::ChatCompletion = serde_json::from_str(str.as_str()).unwrap();
 
-                            sender.send(rec.choices[0].message.content.clone()).await.unwrap();
+                            let mut guard=sender.borrow_mut().try_lock().unwrap();
+                            guard.send(rec.choices[0].message.content.clone()).await.unwrap();
+
                         }
                     }
                 }

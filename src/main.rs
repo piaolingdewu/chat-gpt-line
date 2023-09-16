@@ -3,6 +3,7 @@ mod g_bot;
 mod g_config;
 
 use std::any::Any;
+use std::borrow::BorrowMut;
 use std::fmt::Debug;
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
@@ -48,12 +49,16 @@ async fn main() {
         let view_editor=bot.bot_config.view_editor.clone();
         let (sender, mut receiver) = tokio::sync::mpsc::channel::<String>(32);
         qa.qustion=question.clone().to_string();
+        let mut sender_gurad=std::sync::Arc::new(std::sync::Mutex::new(sender.clone()));
 
-        tokio::spawn(async move {
+        tokio::spawn( async move {
             //bot.chat_completion_stream(question.as_str(),sender).await;
-            let mut b=crate::g_bot::g_bot::g_bot::new();
-            b.send_qustion(question,sender).await;
+            //let mut Sender_g=sender_gurad.borrow_mut().try_lock().unwrap();
 
+            let mut b=std::sync::Arc::new(std::sync::Mutex::new(crate::g_bot::g_bot::g_bot::new()));
+            let mut guard =b.lock().unwrap();
+            guard.send_qustion(question,sender_gurad).await;
+            drop(guard);
         });
 
         if !bot.bot_config.view_editor.is_empty() {
@@ -84,8 +89,10 @@ async fn main() {
     }else {
         let mut b=crate::g_bot::g_bot::g_bot::new();
         let (tx,mut rx)=tokio::sync::mpsc::channel(10);
+        let mut sender_gurad=std::sync::Arc::new(std::sync::Mutex::new(tx.clone()));
 
-        b.send_qustion(question,tx);
+
+        b.send_qustion(question,sender_gurad);
         if let Some(q) = rx.recv().await{
             qa.anwser=q.clone();
             if !bot.bot_config.view_editor.is_empty() {
