@@ -21,7 +21,7 @@ pub mod g_bot {
             }
         }
 
-        pub async fn send_qustion(&mut self, quest: String, tx: std::sync::Arc<std::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
+        pub async fn send_qustion(&mut self, quest: String, tx: std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
             //载入历史记录
             let mut history = vec![];
             if let Some(load) = History::new().read_history_content(self.config.memory) {
@@ -47,9 +47,10 @@ pub mod g_bot {
 
         println!("{:?}", bot.config);
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
+        let g_tx=std::sync::Arc::new(tokio::sync::Mutex::new(tx));
 
         tokio::spawn(async move {
-            bot.send_qustion("帮我使用rust编写一个hello world程序".to_string(), tx).await;
+            bot.send_qustion("帮我使用rust编写一个hello world程序".to_string(), g_tx).await;
         });
 
         while let Some(chunk) = rx.recv().await {
@@ -90,6 +91,7 @@ pub mod g_bot {
 mod gpt_request {
     use std::borrow::BorrowMut;
     use std::cell::RefCell;
+    use std::default;
     use std::fmt::Debug;
     use std::io::BufRead;
     use reqwest::{Client, RequestBuilder};
@@ -128,6 +130,117 @@ mod gpt_request {
         //设置系统的人设
         system_prompt: String,
     }
+
+    // 流式分析
+    pub struct stream_data_slover{
+        in_buf:Vec<u8>,
+        out_buf:Vec<String>
+    }
+    impl stream_data_slover {
+        
+        pub fn new()->Self{
+            Self{
+                in_buf:[].to_vec(),
+                out_buf:[].to_vec()
+            }
+        }
+        pub fn try_conver_json(&self,json_string:String)->Option<String>{
+            let rp_string=json_string.replace("data:", "");
+
+            if let Ok(json_data) = serde_json::from_str::<super::request_json::recv_chunk::ChatCompletionChunk>(&rp_string) {
+                // 解析成功
+                if json_data.choices.len()>0{
+                    let out_string = json_data.choices[0].delta.content.clone();
+                    return Some(out_string)
+                }
+            }
+            None
+        }
+        // 添加byte数据
+        pub fn add_byte_line(&mut self,bytes_line:&Vec<u8>){
+            
+            // 对传入的内容进行解析
+            // 尝试解析为json
+            match String::from_utf8(bytes_line.clone()) {
+                Ok(line_string)=>{
+                    // 尝试解析成json
+                    match self.try_conver_json(line_string) {
+                        Some(out_string) => {
+                            // 解析成功
+                            self.out_buf.insert(0, out_string);
+                            
+                            if self.in_buf.len()>0{
+                                self.in_buf.clear();
+                            }
+                        },
+                        None => {
+                            // 解析失败
+                            self.in_buf.append(&mut bytes_line.clone());
+                        },
+                    }
+
+                    
+                }
+                Err(_)=>{
+                    // 解析为string失败，这个时候大概率是一个中文两个字节，正好解析到中间了 放入缓冲区中
+                    self.in_buf.append(&mut bytes_line.clone());
+                }
+            }
+
+            //尝试解析in_buf的内容
+            if self.in_buf.len()>0{
+                let json_string=String::from_utf8(self.in_buf.clone());
+                
+                if let Ok(json_string) =json_string{
+                    let l=json_string.clone();
+                    let c_json=json_string.split_once("data:").unwrap_or(("",l.as_str()));
+
+                    //println!("buf:{}",c_json.1);
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&c_json.1){
+
+                        if let Some(out_string) = self.try_conver_json(json_string) {
+                            // 解析成功
+                            self.out_buf.insert(0, out_string);
+                        }
+                        self.in_buf.clear();
+                    }
+                }
+            }
+
+        }
+
+        pub fn pop_slover_line(&mut self)->Option<String>{
+            //
+            self.out_buf.pop()
+        }
+        
+    }
+
+    #[test]
+    fn stream_data_test(){
+        match std::fs::read("t1.txt") {
+            Ok(content) => {
+                let mut s_slo=stream_data_slover::new();
+
+                for i in content.lines(){
+                    let mut line=i.unwrap().as_bytes().to_vec();
+                    s_slo.add_byte_line(&line);
+                    if let Some(out_string) = s_slo.pop_slover_line() {
+                        print!("{}",out_string);
+                    }
+                }
+            },
+            Err(err) => {
+                println!("未读取到文件内容")
+            },
+        }    
+
+
+    }
+
+
+
+
 
     impl gpt_request {
         //新建一个请求
@@ -178,12 +291,13 @@ mod gpt_request {
         }
 
 
+        
+
 
         //发送请求
-        pub async fn send(&mut self, mut sender: std::sync::Arc<std::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
+        pub async fn send(&mut self, mut sender: std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::Sender<String>>>) {
             let mut body = super::request_json::request_body::ChatMessage { ..Default::default() };
             let mut sender_arc=std::sync::Arc::new(std::sync::Mutex::new(&sender));
-
             body.model = self.model.clone();
             body.stream = self.stream.clone();
             
@@ -224,19 +338,20 @@ mod gpt_request {
             let mut request=if http_proxy.is_empty() { Client::new() }else {
                 Client::builder().proxy(reqwest::Proxy::http(&http_proxy).unwrap()).build().unwrap()
             };
-
             match request.post(self.endpoint.clone())
                          .header("Content-Type", "application/json")
                          .header("api-key", format!("{}", token.clone()))
                          .body(serde_json::to_string(&body).unwrap())
                          .send().await {
                 Ok(mut client) => {
+
                     // 请求成
                     //println!("{}",serde_json::to_string(&body).unwrap());
 
                     if is_stream {
                         
-                        let mut fail_buf=Arc::new(Mutex::new(Vec::<u8>::new()));
+                        let mut fail_buf=Arc::new(tokio::sync::Mutex::new(Vec::<u8>::new()));
+                        //println!("在发送阶段");
 
                         while let Some(Recv) = client.chunk().await.unwrap() {
                             //解析chunk并发送
