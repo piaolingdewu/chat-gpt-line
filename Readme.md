@@ -29,7 +29,6 @@
     ```
 
 
-
 ## 配置文件
 
 配置文件在 `~/.config/chat-gpt-line/config.yaml`，默认配置如下：
